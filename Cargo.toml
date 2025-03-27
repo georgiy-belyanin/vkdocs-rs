@@ -2,6 +2,10 @@
 name = "vkdocs-rs"
 version = "0.1.0"
 edition = "2021"
+description = "Supplementary VkDocs Rust library"
+license = "BSD-3-Clause"
+authors = ["Georgiy Belyanin <belyaningeorge@ya.ru>"]
+repository = "https://github.com/georgiy-belyanin/vkdocs-rs"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
