@@ -2,6 +2,15 @@
 
 VkDocs-rs is a supplementary crate for working with VK-Docs format ([see open-source VK Cloud documentation for more information](https://github.com/vk-cs/docs-public)). This crate helps to maintain [VkDocs meta files](https://github.com/vk-cs/docs-public/blob/master/guides/how-it-works.md) and update it correspondingly to the changes.
 
+## Installation
+
+Add the following to your `Cargo.toml`:
+
+```toml
+[dependencies]
+vkdocs = "0.1"
+```
+
 ## Example usage
 
 Here's a basic usage of the VkDocs-rs crate.
