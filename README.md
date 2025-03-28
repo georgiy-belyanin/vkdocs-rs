@@ -8,7 +8,7 @@ Add the following to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-vkdocs = "0.1"
+vkdocs-rs = "0.1"
 ```
 
 ## Example usage
@@ -16,7 +16,7 @@ vkdocs = "0.1"
 Here's a basic usage of the VkDocs-rs crate.
 
 ```rust
-use vkdocs::VkDocs;
+use vkdocs_rs::VkDocs;
 
 // Create a documentation on a cool module.
 let vkdocs = VkDocs::new("vkdoc-project");
