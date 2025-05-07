@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+// See https://github.com/vk-cs/docs-public/blob/master/guides/how-it-works.md.
+
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Meta {
@@ -10,88 +12,284 @@ struct Meta {
     section_title: String,
     short_description: String,
     page_description: String,
+    meta_description: String,
     weight: i32,
     uuid: String,
     created_at: String,
     updated_at: String,
 }
 
+fn get_now_timestamp() -> String {
+    return chrono::Utc::now()
+        .format("%Y-%m-%dT%H:%M:%S.%fZ")
+        .to_string();
+}
+
+impl Meta {
+    fn touch(self) -> Self {
+        Meta {
+            updated_at: get_now_timestamp(),
+            ..self
+        }
+    }
+
+    fn apply(self, page: Page) -> (Self, bool) {
+        let mut updated = false;
+
+        let title = page
+            .title
+            .inspect(|title| updated |= self.title.ne(title))
+            .unwrap_or(self.title);
+        let meta_title = page
+            .meta_title
+            .inspect(|meta_title| updated |= self.meta_title.ne(meta_title))
+            .unwrap_or(self.meta_title);
+        let section_title = page
+            .section_title
+            .inspect(|section_title| updated |= self.section_title.ne(section_title))
+            .unwrap_or(self.section_title);
+        let short_description = page
+            .short_description
+            .inspect(|short_description| updated |= self.short_description.ne(short_description))
+            .unwrap_or(self.short_description);
+        let page_description = page
+            .page_description
+            .inspect(|page_description| updated |= self.page_description.ne(page_description))
+            .unwrap_or(self.page_description);
+        let meta_description = page
+            .meta_description
+            .inspect(|meta_description| updated |= self.meta_description.ne(meta_description))
+            .unwrap_or(self.meta_description);
+        let weight = page
+            .weight
+            .inspect(|weight| updated |= self.weight.ne(weight))
+            .unwrap_or(self.weight);
+
+        let created_at = self.created_at;
+        let updated_at = self.updated_at;
+        let uuid = self.uuid;
+
+        let meta = Meta {
+            title,
+            meta_title,
+            section_title,
+            short_description,
+            page_description,
+            meta_description,
+            weight,
+            created_at,
+            updated_at,
+            uuid,
+        };
+        let meta = if updated { meta.touch() } else { meta };
+
+        (meta, updated)
+    }
+}
+
 pub struct Vkdoc {
     path: PathBuf,
 }
 
-impl Vkdoc {
-    pub fn new(path: &Path) -> Vkdoc {
-        fs::create_dir_all(path).expect(
-            format!(
-                "Unable to initialize a vkdoc project at the specified dir {}",
-                path.to_str().unwrap()
-            )
-            .as_str(),
-        );
+pub struct Page {
+    title: Option<String>,
+    meta_title: Option<String>,
+    meta_description: Option<String>,
+    short_description: Option<String>,
+    page_description: Option<String>,
+    section_title: Option<String>,
+    content: Option<String>,
+    weight: Option<i32>,
+}
 
-        Vkdoc {
-            path: path.to_path_buf(),
+const DEFAULT_WEIGHT: i32 = 1;
+
+impl Page {
+    pub fn new() -> Page {
+        Page {
+            title: None,
+            meta_title: None,
+            section_title: None,
+            meta_description: None,
+            short_description: None,
+            page_description: None,
+            content: None,
+            weight: None,
         }
     }
 
-    pub fn upsert(&self, path: &Path, content: String) -> bool {
+    pub fn with_title(self, title: String) -> Page {
+        Page {
+            title: Some(title),
+            ..self
+        }
+    }
+
+    pub fn with_meta_title(self, meta_title: String) -> Page {
+        Page {
+            meta_title: Some(meta_title),
+            ..self
+        }
+    }
+
+    pub fn with_section_title(self, section_title: String) -> Page {
+        Page {
+            section_title: Some(section_title),
+            ..self
+        }
+    }
+
+    pub fn with_short_description(self, short_description: String) -> Page {
+        Page {
+            short_description: Some(short_description),
+            ..self
+        }
+    }
+
+    pub fn with_page_description(self, page_description: String) -> Page {
+        Page {
+            page_description: Some(page_description),
+            ..self
+        }
+    }
+
+    pub fn with_content(self, content: String) -> Page {
+        Page {
+            content: Some(content),
+            ..self
+        }
+    }
+
+    pub fn with_weight(self, weight: i32) -> Page {
+        Page {
+            weight: Some(weight),
+            ..self
+        }
+    }
+}
+
+impl TryInto<Meta> for Page {
+    type Error = String;
+
+    fn try_into(self) -> Result<Meta, Self::Error> {
+        let now = get_now_timestamp();
+
+        let title = self
+            .title
+            .ok_or("A title is required for a newly created page")?;
+        let meta_title = self.meta_title.unwrap_or(title.clone());
+        let section_title = self.section_title.unwrap_or(title.clone());
+
+        let short_description = self.short_description.unwrap_or("".to_string());
+        let page_description = self.page_description.unwrap_or(short_description.clone());
+        let meta_description = self.meta_description.unwrap_or(short_description.clone());
+
+        let weight = self.weight.unwrap_or(DEFAULT_WEIGHT);
+        let uuid = uuid::Uuid::new_v4().to_string();
+
+        let updated_at = now;
+        let created_at = updated_at.clone();
+
+        Ok(Meta {
+            title,
+            meta_title,
+            section_title,
+            short_description,
+            page_description,
+            meta_description,
+            weight,
+            uuid,
+            created_at,
+            updated_at,
+        })
+    }
+}
+
+impl Vkdoc {
+    pub fn new(path: &Path) -> Result<Vkdoc, String> {
+        fs::create_dir_all(path).map_err(|err| {
+            format!(
+                "Unable to initialize a vkdoc project at the specified dir {}: {}",
+                path.display(),
+                err
+            )
+        })?;
+
+        Ok(Vkdoc {
+            path: path.to_path_buf(),
+        })
+    }
+
+    pub fn upsert(&self, path: &Path, page: Page) -> Result<bool, String> {
         let path = self.path.join(path);
-        fs::create_dir_all(&path).expect("Unable to create an entry at the specified dir");
+        fs::create_dir_all(&path)
+            .map_err(|err| format!("Unable to create an entry at the specified dir: {}", err))?;
 
         let name = path
             .file_name()
-            .expect("Unable to load an entry at the specified dir")
+            .ok_or("Unable to load an entry at the specified dir")?
             .to_os_string()
             .into_string()
-            .expect("Unable to load an entry at the specified dir");
+            .map_err(|_| "Unable to load an entry at the specified dir")?;
         let doc_path = path.join(format!("{}.md", name));
 
-        let upsert = if doc_path.exists() {
-            let old_content = fs::read_to_string(&doc_path)
-                .expect(format!("Unable to read entry content at {}", path.display()).as_str());
-            let old_checksum = md5::compute(&old_content);
-            let checksum = md5::compute(&content);
+        let content_updated = if doc_path.exists() {
+            let old_content = fs::read_to_string(&doc_path).map_err(|err| {
+                format!(
+                    "Unable to read entry content at {}: {}",
+                    doc_path.display(),
+                    err
+                )
+            })?;
+            page.content.as_ref().is_none_or(|content| {
+                let old_checksum = md5::compute(&old_content);
+                let checksum = md5::compute(&content);
 
-            old_checksum != checksum
+                old_checksum != checksum
+            })
         } else {
-            true
+            page.content.is_some()
         };
 
-        let now = chrono::Utc::now()
-            .format("%Y-%m-%dT%H:%M:%S.%fZ")
-            .to_string();
+        if content_updated {
+            page.content.as_ref().map_or_else(
+                || Ok::<(), String>(()),
+                |content| {
+                    fs::write(doc_path, content).map_err(|err| {
+                        format!(
+                            "Unable to write a vkdoc entry at the specified dir: {}",
+                            err
+                        )
+                    })?;
+                    Ok(())
+                },
+            )?;
+        }
+
         let meta_path = path.join(format!("{}.meta.json", name));
-        let meta = if meta_path.exists() {
+        let (meta, meta_updated) = if meta_path.exists() {
             let meta_content = &fs::read_to_string(&meta_path)
                 .expect(format!("Unable to read entry meta at {}", path.display()).as_str());
             let meta: Meta = serde_json::from_str(meta_content)
                 .expect(format!("Unable to parse entry meta json at {}", path.display()).as_str());
-            let updated_at = if upsert { now } else { meta.updated_at };
-            Meta { updated_at, ..meta }
+            let (meta, updated) = meta.apply(page);
+            let meta = if content_updated { meta.touch() } else { meta };
+            (meta, updated)
         } else {
-            Meta {
-                title: name.clone(),
-                meta_title: name.clone(),
-                section_title: name.clone(),
-                short_description: "*No description*".to_string(),
-                page_description: "*No description*".to_string(),
-                weight: 1,
-                uuid: uuid::Uuid::new_v4().to_string(),
-                created_at: now.clone(),
-                updated_at: now.clone(),
-            }
+            (page.try_into()?, true)
         };
 
-        if upsert {
-            fs::write(doc_path, content)
-                .expect("Unable to write a vkdoc entry at the specified dir");
-            let meta_content =
-                serde_json::to_string(&meta).expect("Unable to serialize entry meta json");
-            fs::write(meta_path, meta_content)
-                .expect("Unable to write a vkdoc meta at the specified dir");
+        let updated = meta_updated || content_updated;
+
+        if updated {
+            let meta_content = serde_json::to_string(&meta)
+                .map_err(|err| format!("Unable to serialize entry meta json: {}", err))?;
+            fs::write(meta_path, meta_content).map_err(|err| {
+                format!("Unable to write a vkdoc meta at the specified dir: {}", err)
+            })?;
         }
-        upsert
+
+        Ok(updated)
     }
 }
 
@@ -101,15 +299,18 @@ mod tests {
     use tempdir::TempDir;
 
     #[test]
-    fn basic_upsert() {
+    fn basic_upsert_content() {
         let tempdir = TempDir::new("vkdoc").unwrap();
         let path = tempdir.path().join("test");
         let content = "content".to_string();
+        let page = Page::new()
+            .with_title("test".to_string())
+            .with_content(content.clone());
 
-        let vkdoc = Vkdoc::new(&path);
+        let vkdoc = Vkdoc::new(&path).unwrap();
         assert_eq!(vkdoc.path, path);
 
-        assert_eq!(vkdoc.upsert(&path, content.clone()), true);
+        assert_eq!(vkdoc.upsert(&path, page).unwrap(), true);
 
         let content_path = path.join("test.md");
         let real_content = fs::read_to_string(&content_path).unwrap();
@@ -121,10 +322,15 @@ mod tests {
         assert_eq!(real_meta.title, "test");
         assert_eq!(real_meta.meta_title, "test");
         assert_eq!(real_meta.section_title, "test");
-        assert_eq!(real_meta.short_description, "*No description*");
-        assert_eq!(real_meta.page_description, "*No description*");
+        assert_eq!(real_meta.short_description, "");
+        assert_eq!(real_meta.page_description, "");
 
-        assert_eq!(vkdoc.upsert(&path, content.clone()), false);
+        assert_eq!(
+            vkdoc
+                .upsert(&path, Page::new().with_content(content.clone()))
+                .unwrap(),
+            false
+        );
         let real_content = fs::read_to_string(&content_path).unwrap();
         assert_eq!(real_content, content);
 
@@ -133,13 +339,50 @@ mod tests {
         assert_eq!(real_meta.updated_at, real_meta.created_at);
 
         let content = "new content".to_string();
-        assert_eq!(vkdoc.upsert(&path, content.clone()), true);
+        assert_eq!(
+            vkdoc
+                .upsert(&path, Page::new().with_content(content.clone()))
+                .unwrap(),
+            true
+        );
 
         let real_content = fs::read_to_string(&content_path).unwrap();
         assert_eq!(real_content, content);
 
         let real_meta: Meta =
             serde_json::from_str(fs::read_to_string(&meta_path).unwrap().as_str()).unwrap();
+        assert_ne!(real_meta.updated_at, real_meta.created_at);
+    }
+
+    #[test]
+    fn basic_upsert_meta() {
+        let tempdir = TempDir::new("vkdoc").unwrap();
+        let path = tempdir.path().join("test");
+        let page = Page::new().with_title("test".to_string());
+
+        let vkdoc = Vkdoc::new(&path).unwrap();
+        assert_eq!(vkdoc.path, path);
+
+        assert_eq!(vkdoc.upsert(&path, page).unwrap(), true);
+
+        let meta_path = path.join("test.meta.json");
+        let real_meta: Meta =
+            serde_json::from_str(fs::read_to_string(&meta_path).unwrap().as_str()).unwrap();
+        assert_eq!(real_meta.title, "test");
+
+        let page = Page::new().with_title("test".to_string());
+        assert_eq!(vkdoc.upsert(&path, page).unwrap(), false);
+
+        let real_meta: Meta =
+            serde_json::from_str(fs::read_to_string(&meta_path).unwrap().as_str()).unwrap();
+        assert_eq!(real_meta.updated_at, real_meta.created_at);
+
+        let page = Page::new().with_title("test1".to_string());
+        assert_eq!(vkdoc.upsert(&path, page).unwrap(), true);
+
+        let real_meta: Meta =
+            serde_json::from_str(fs::read_to_string(&meta_path).unwrap().as_str()).unwrap();
+        assert_eq!(real_meta.title, "test1");
         assert_ne!(real_meta.updated_at, real_meta.created_at);
     }
 }
