@@ -21,12 +21,20 @@ use vkdocs_rs::VkDocs;
 // Create a documentation on a cool module.
 let vkdocs = VkDocs::new("vkdoc-project");
 
-let cool_module_path = Path::new("module/cool");
-vkdocs.upsert(&cool_module_path, "Here as a documentation on a cool module.");
+// Describe a new VK Doc article.
+let page = Page::new()
+    .with_title("Cool module".to_string())
+    .with_content("Docs on a cool module.".to_string());
 
-// Update the documentation on a cool module.
-// The call automatically updates the metadata.
-vkdocs.upsert(&cool_module_path, "Here as a newer documentation on a cool module.");
+// Create a new article based on the provided page information.
+vkdocs.upsert(&cool_module_path, page);
+
+// Update the article with newer contents.
+let page = Page::new()
+    .with_content("Newer docs on a cool module.".to_string());
+
+// This call also automatically updates the article's metadata.
+vkdocs.upsert(&cool_module_path, page);
 ```
 
 If you also want to generate template-based Markdown documentation files we recommend to use [Tera crate](https://github.com/Keats/tera).
