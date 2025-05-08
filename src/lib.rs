@@ -195,17 +195,22 @@ impl Vkdoc {
     }
 
     pub fn upsert(&self, path: &Path, page: Page) -> Result<bool, String> {
-        let path = self.path.join(path);
-        fs::create_dir_all(&path)
+        if !path.is_relative() {
+            return Err("Only relative paths are supported".to_string());
+        }
+
+        let full_path = self.path.join(path);
+        fs::create_dir_all(&full_path)
             .map_err(|err| format!("Unable to create an entry at the specified dir: {}", err))?;
 
-        let name = path
+
+        let name = full_path
             .file_name()
             .ok_or("Unable to load an entry at the specified dir")?
             .to_os_string()
             .into_string()
             .map_err(|_| "Unable to load an entry at the specified dir")?;
-        let doc_path = path.join(format!("{}.md", name));
+        let doc_path = full_path.join(format!("{}.md", name));
 
         let content_updated = if doc_path.exists() {
             let old_content = fs::read_to_string(&doc_path).map_err(|err| {
@@ -240,12 +245,22 @@ impl Vkdoc {
             )?;
         }
 
-        let meta_path = path.join(format!("{}.meta.json", name));
+        let meta_path = full_path.join(format!("{}.meta.json", name));
         let (meta, meta_updated) = if meta_path.exists() {
-            let meta_content = &fs::read_to_string(&meta_path)
-                .expect(format!("Unable to read entry meta at {}", path.display()).as_str());
-            let meta: Meta = serde_json::from_str(meta_content)
-                .expect(format!("Unable to parse entry meta json at {}", path.display()).as_str());
+            let meta_content = &fs::read_to_string(&meta_path).map_err(|err| {
+                format!(
+                    "Unable to read entry meta at {}: {}",
+                    full_path.display(),
+                    err
+                )
+            })?;
+            let meta: Meta = serde_json::from_str(meta_content).map_err(|err| {
+                format!(
+                    "Unable to parse entry meta json at {}: {}",
+                    full_path.display(),
+                    err
+                )
+            })?;
             let (meta, updated) = meta.apply(page);
             (meta, updated)
         } else {
@@ -274,22 +289,24 @@ mod tests {
     #[test]
     fn basic_upsert_content() {
         let tempdir = TempDir::new("vkdoc").unwrap();
-        let path = tempdir.path().join("test");
+        let root_path = tempdir.path();
+        let entry_path = Path::new("test");
+        let full_entry_path = root_path.join(entry_path);
         let content = "content".to_string();
         let page = Page::new()
             .with_title("test".to_string())
             .with_content(content.clone());
 
-        let vkdoc = Vkdoc::new(&path).unwrap();
-        assert_eq!(vkdoc.path, path);
+        let vkdoc = Vkdoc::new(root_path).unwrap();
+        assert!(root_path.exists() && root_path.is_dir());
 
-        assert_eq!(vkdoc.upsert(&path, page).unwrap(), true);
+        assert_eq!(vkdoc.upsert(&entry_path, page).unwrap(), true);
 
-        let content_path = path.join("test.md");
+        let content_path = full_entry_path.join("test.md");
         let real_content = fs::read_to_string(&content_path).unwrap();
         assert_eq!(real_content, content);
 
-        let meta_path = path.join("test.meta.json");
+        let meta_path = full_entry_path.join("test.meta.json");
         let real_meta: Meta =
             serde_json::from_str(fs::read_to_string(&meta_path).unwrap().as_str()).unwrap();
         assert_eq!(real_meta.title, "test");
@@ -300,7 +317,7 @@ mod tests {
 
         assert_eq!(
             vkdoc
-                .upsert(&path, Page::new().with_content(content.clone()))
+                .upsert(&entry_path, Page::new().with_content(content.clone()))
                 .unwrap(),
             false
         );
@@ -310,7 +327,7 @@ mod tests {
         let content = "new content".to_string();
         assert_eq!(
             vkdoc
-                .upsert(&path, Page::new().with_content(content.clone()))
+                .upsert(&entry_path, Page::new().with_content(content.clone()))
                 .unwrap(),
             true
         );
@@ -322,24 +339,25 @@ mod tests {
     #[test]
     fn basic_upsert_meta() {
         let tempdir = TempDir::new("vkdoc").unwrap();
-        let path = tempdir.path().join("test");
+        let root_path = tempdir.path();
+        let entry_path = Path::new("test");
+        let full_entry_path = root_path.join(entry_path);
         let page = Page::new().with_title("test".to_string());
 
-        let vkdoc = Vkdoc::new(&path).unwrap();
-        assert_eq!(vkdoc.path, path);
+        let vkdoc = Vkdoc::new(&root_path).unwrap();
 
-        assert_eq!(vkdoc.upsert(&path, page).unwrap(), true);
+        assert_eq!(vkdoc.upsert(&entry_path, page).unwrap(), true);
 
-        let meta_path = path.join("test.meta.json");
+        let meta_path = full_entry_path.join("test.meta.json");
         let real_meta: Meta =
             serde_json::from_str(fs::read_to_string(&meta_path).unwrap().as_str()).unwrap();
         assert_eq!(real_meta.title, "test");
 
         let page = Page::new().with_title("test".to_string());
-        assert_eq!(vkdoc.upsert(&path, page).unwrap(), false);
+        assert_eq!(vkdoc.upsert(&entry_path, page).unwrap(), false);
 
         let page = Page::new().with_title("test1".to_string());
-        assert_eq!(vkdoc.upsert(&path, page).unwrap(), true);
+        assert_eq!(vkdoc.upsert(&entry_path, page).unwrap(), true);
 
         let real_meta: Meta =
             serde_json::from_str(fs::read_to_string(&meta_path).unwrap().as_str()).unwrap();
