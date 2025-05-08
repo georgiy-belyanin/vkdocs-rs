@@ -67,6 +67,7 @@ impl Meta {
     }
 }
 
+#[derive(Default)]
 pub struct Vkdoc {
     path: PathBuf,
 }
