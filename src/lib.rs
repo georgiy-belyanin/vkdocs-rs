@@ -194,6 +194,32 @@ impl Vkdoc {
         })
     }
 
+    fn upsert_sections(&self, path: Option<&Path>) -> Result<(), String> {
+        match path {
+            Some(path) => match path.file_name() {
+                Some(name) => {
+                    let name = name
+                        .to_os_string()
+                        .into_string()
+                        .map_err(|_| "Unable to convert filename to string".to_string())?;
+                    let meta_path = self.path.join(path).join(format!("{}.meta.json", name));
+                    if !meta_path.exists() {
+                        let meta: Meta = Page::new().with_title(name).try_into()?;
+                        let meta_content = serde_json::to_string_pretty(&meta).map_err(|err| {
+                            format!("Unable to serialize entry meta json: {}", err)
+                        })?;
+                        fs::write(meta_path, meta_content).map_err(|err| {
+                            format!("Unable to write a vkdoc meta at the specified dir: {}", err)
+                        })?;
+                    }
+                    self.upsert_sections(path.parent())
+                }
+                None => Ok(()),
+            },
+            None => Ok(()),
+        }
+    }
+
     pub fn upsert(&self, path: &Path, page: Page) -> Result<bool, String> {
         if !path.is_relative() {
             return Err("Only relative paths are supported".to_string());
@@ -203,6 +229,7 @@ impl Vkdoc {
         fs::create_dir_all(&full_path)
             .map_err(|err| format!("Unable to create an entry at the specified dir: {}", err))?;
 
+        self.upsert_sections(path.parent())?;
 
         let name = full_path
             .file_name()
@@ -362,5 +389,24 @@ mod tests {
         let real_meta: Meta =
             serde_json::from_str(fs::read_to_string(&meta_path).unwrap().as_str()).unwrap();
         assert_eq!(real_meta.title, "test1");
+    }
+
+    #[test]
+    fn basic_upsert_with_sections() {
+        let tempdir = TempDir::new("vkdoc").unwrap();
+        let root_path = tempdir.path();
+        let entry_path = Path::new("section/test");
+        let full_entry_path = root_path.join(entry_path);
+        let section_path = full_entry_path.parent().unwrap();
+        let page = Page::new().with_title("test".to_string());
+
+        let vkdoc = Vkdoc::new(&root_path).unwrap();
+
+        assert_eq!(vkdoc.upsert(&entry_path, page).unwrap(), true);
+
+        let meta_path = full_entry_path.join("test.meta.json");
+        assert!(meta_path.exists());
+        let section_meta_path = section_path.join("section.meta.json");
+        assert!(section_meta_path.exists())
     }
 }
