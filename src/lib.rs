@@ -15,24 +15,9 @@ struct Meta {
     meta_description: String,
     weight: i32,
     uuid: String,
-    created_at: String,
-    updated_at: String,
-}
-
-fn get_now_timestamp() -> String {
-    return chrono::Utc::now()
-        .format("%Y-%m-%dT%H:%M:%S.%fZ")
-        .to_string();
 }
 
 impl Meta {
-    fn touch(self) -> Self {
-        Meta {
-            updated_at: get_now_timestamp(),
-            ..self
-        }
-    }
-
     fn apply(self, page: Page) -> (Self, bool) {
         let mut updated = false;
 
@@ -65,8 +50,6 @@ impl Meta {
             .inspect(|weight| updated |= self.weight.ne(weight))
             .unwrap_or(self.weight);
 
-        let created_at = self.created_at;
-        let updated_at = self.updated_at;
         let uuid = self.uuid;
 
         let meta = Meta {
@@ -77,11 +60,8 @@ impl Meta {
             page_description,
             meta_description,
             weight,
-            created_at,
-            updated_at,
             uuid,
         };
-        let meta = if updated { meta.touch() } else { meta };
 
         (meta, updated)
     }
@@ -172,8 +152,6 @@ impl TryInto<Meta> for Page {
     type Error = String;
 
     fn try_into(self) -> Result<Meta, Self::Error> {
-        let now = get_now_timestamp();
-
         let title = self
             .title
             .ok_or("A title is required for a newly created page")?;
@@ -187,9 +165,6 @@ impl TryInto<Meta> for Page {
         let weight = self.weight.unwrap_or(DEFAULT_WEIGHT);
         let uuid = uuid::Uuid::new_v4().to_string();
 
-        let updated_at = now;
-        let created_at = updated_at.clone();
-
         Ok(Meta {
             title,
             meta_title,
@@ -199,8 +174,6 @@ impl TryInto<Meta> for Page {
             meta_description,
             weight,
             uuid,
-            created_at,
-            updated_at,
         })
     }
 }
@@ -273,7 +246,6 @@ impl Vkdoc {
             let meta: Meta = serde_json::from_str(meta_content)
                 .expect(format!("Unable to parse entry meta json at {}", path.display()).as_str());
             let (meta, updated) = meta.apply(page);
-            let meta = if content_updated { meta.touch() } else { meta };
             (meta, updated)
         } else {
             (page.try_into()?, true)
@@ -334,10 +306,6 @@ mod tests {
         let real_content = fs::read_to_string(&content_path).unwrap();
         assert_eq!(real_content, content);
 
-        let real_meta: Meta =
-            serde_json::from_str(fs::read_to_string(&meta_path).unwrap().as_str()).unwrap();
-        assert_eq!(real_meta.updated_at, real_meta.created_at);
-
         let content = "new content".to_string();
         assert_eq!(
             vkdoc
@@ -348,10 +316,6 @@ mod tests {
 
         let real_content = fs::read_to_string(&content_path).unwrap();
         assert_eq!(real_content, content);
-
-        let real_meta: Meta =
-            serde_json::from_str(fs::read_to_string(&meta_path).unwrap().as_str()).unwrap();
-        assert_ne!(real_meta.updated_at, real_meta.created_at);
     }
 
     #[test]
@@ -373,16 +337,11 @@ mod tests {
         let page = Page::new().with_title("test".to_string());
         assert_eq!(vkdoc.upsert(&path, page).unwrap(), false);
 
-        let real_meta: Meta =
-            serde_json::from_str(fs::read_to_string(&meta_path).unwrap().as_str()).unwrap();
-        assert_eq!(real_meta.updated_at, real_meta.created_at);
-
         let page = Page::new().with_title("test1".to_string());
         assert_eq!(vkdoc.upsert(&path, page).unwrap(), true);
 
         let real_meta: Meta =
             serde_json::from_str(fs::read_to_string(&meta_path).unwrap().as_str()).unwrap();
         assert_eq!(real_meta.title, "test1");
-        assert_ne!(real_meta.updated_at, real_meta.created_at);
     }
 }
